@@ -24,8 +24,8 @@ class Handler(BaseRequestHandler):
             raise Exception('Max request length exceeded')
 
         method, entity_kind, entity_id = req[:-1].split(' ', 3)
-        if (method != 'GET' 
-           or entity_kind not in ('user', 'account') 
+        if (method != 'GET'
+           or entity_kind not in ('user', 'account')
            or not entity_id.isdigit()):
             raise Exception('Bad request')
 
@@ -38,7 +38,7 @@ class Handler(BaseRequestHandler):
 
             if 'account_id' not in user:
                 account_id = str(len(self.accounts) + 1)
-                account = {'id': account_id, 
+                account = {'id': account_id,
                            'balance': random.randint(0, 100)}
                 self.accounts[account_id] = account
                 user['account_id'] = account_id

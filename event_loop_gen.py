@@ -42,13 +42,11 @@ class EventLoop:
     def _execute(self, callback, *args):
         self._time = hrtime()
         try:
-            # unwind(callback(*args)).catch(
-            #        lambda e: print('Uncaught rejection:', e))
             ret = callback(*args)
             if is_generator(ret):
-                unwind2(ret, 
-                        ok=lambda *_: None, 
-                        fail=lambda e: print('Uncaught rejection:', e))
+                unwind(ret,
+                       ok=lambda *_: None,
+                       fail=lambda e: print('Uncaught rejection:', e))
 
         except Exception as err:
             print('Uncaught exception:', err)
@@ -119,7 +117,7 @@ class Context:
         return self._event_loop
 
 
-def unwind2(gen, ok, fail, ret=None, method='send'):
+def unwind(gen, ok, fail, ret=None, method='send'):
     try:
         ret = getattr(gen, method)(ret)
     except StopIteration as stop:
@@ -128,16 +126,16 @@ def unwind2(gen, ok, fail, ret=None, method='send'):
         return fail(e)
 
     if is_generator(ret):
-        unwind2(ret,
-                ok=lambda x: unwind2(gen, ok, fail, x),
-                fail=lambda e: unwind2(gen, ok, fail, e, 'throw'))
+        unwind(ret,
+               ok=lambda x: unwind(gen, ok, fail, x),
+               fail=lambda e: unwind(gen, ok, fail, e, 'throw'))
     elif is_promise(ret):
-        ret.then(lambda x=None: unwind2(gen, ok, fail, x)) \
-           .catch(lambda e: unwind2(gen, ok, fail, e, 'throw'))
+        ret.then(lambda x=None: unwind(gen, ok, fail, x)) \
+           .catch(lambda e: unwind(gen, ok, fail, e, 'throw'))
     else:
-        wait_all(ret, 
-                lambda x=None: unwind2(gen, ok, fail, x),
-                lambda e: unwind2(gen, ok, fail, e, 'throw'))
+        wait_all(ret,
+                lambda x=None: unwind(gen, ok, fail, x),
+                lambda e: unwind(gen, ok, fail, e, 'throw'))
 
 
 def wait_all(col, ok, fail):
@@ -157,7 +155,7 @@ def wait_all(col, ok, fail):
 
     for i, c in enumerate(col):
         if is_generator(c):
-            unwind2(c, ok=_resolve_single(i), fail=fail)
+            unwind(c, ok=_resolve_single(i), fail=fail)
             continue
 
         if is_promise(c):
@@ -166,59 +164,6 @@ def wait_all(col, ok, fail):
 
         raise Exception('Only promise or generator '
                         'can be yielded to event loop')
-
-
-def unwind(gen):
-    p = Promise()
-    if not is_generator(gen):
-        p._resolve(gen)
-        return p
-
-    def _on_fulfilled(res=None):
-        ret = None
-        try:
-            ret = gen.send(res)
-        except StopIteration as stop:
-            return p._resolve(stop.value)
-        except Exception as exc:
-            return p._reject(exc)
-        _next(ret)
-
-    def _on_rejected(err):
-        ret = None
-        try:
-            ret = gen.throw(err)
-        except StopIteration as stop:
-            return p._resolve(stop.value)
-        except Exception as exc:
-            return p._reject(exc)
-        _next(ret)
-
-    def _next(ret):
-        nextp = to_promise(ret)
-        if not nextp:
-            return _on_rejected(Exception('Only promise or generator '
-                                          'can be yielded to event loop'))
-        nextp.then(_on_fulfilled)
-        nextp.catch(_on_rejected)
-
-    _on_fulfilled()
-    return p
-
-
-def to_promise(val):
-    if is_promise(val):
-        return val
-
-    if is_generator(val):
-        return unwind(val)
-
-    if isinstance(val, list):
-        promises = [to_promise(x) for x in val]
-        if len(val) == len(list(filter(None, promises))):
-            return Promise.all(promises)
-
-    return None
 
 
 def is_generator(val):
@@ -293,7 +238,7 @@ class Promise(Context):
         self._value = err
         for cb in self._on_reject:
             cb(err)
-    
+
 
 class IOError(Exception):
     def __init__(self, message, errorno, errorcode):
@@ -322,7 +267,7 @@ class socket(Context):
         # 1 - connecting
         # 2 - connected
         # 3 - closed
-        self._state = 0 
+        self._state = 0
         self._callbacks = {}
 
     def connect(self, addr):
@@ -365,7 +310,7 @@ class socket(Context):
             nonlocal data
             if err:
                 return p._reject(err)
-            
+
             n = self._sock.send(data)
             if n < len(data):
                 data = data[n:]
@@ -408,11 +353,11 @@ class socket(Context):
                 cb(err)
 
     def _get_sock_error(self):
-        err = self._sock.getsockopt(_socket.SOL_SOCKET, 
+        err = self._sock.getsockopt(_socket.SOL_SOCKET,
                                     _socket.SO_ERROR)
         if not err:
             return None
-        return IOError('connection failed', 
+        return IOError('connection failed',
                        err, errno.errorcode[err])
 
 ###############################################################################
@@ -457,7 +402,7 @@ def print_balance(serv_addr, user_id):
         print('Catched:', exc)
 
 
-def main(serv_addr):
+def main1(serv_addr):
     def on_sleep():
         b = yield get_user_balance(serv_addr, 1)
         print('side flow:', b)
@@ -469,10 +414,27 @@ def main(serv_addr):
     yield tasks
 
 
+def main2(*args):
+  sock = socket(_socket.AF_INET, _socket.SOCK_STREAM)
+  yield sock.connect(('t.co', 80))
+
+  try:
+    yield sock.sendall(b'GET / HTTP/1.1\r\nHost: t.co\r\n\r\n')
+    val = yield sock.recv(1024)
+    print(val)
+  finally:
+    sock.close()
+
+
 if __name__ == '__main__':
+    print('Run main1()')
     event_loop = EventLoop()
     Context.set_event_loop(event_loop)
 
     serv_addr = ('127.0.0.1', int(sys.argv[1]))
-    event_loop.run(main, serv_addr)
+    event_loop.run(main1, serv_addr)
 
+    print('\nRun main2()')
+    event_loop = EventLoop()
+    Context.set_event_loop(event_loop)
+    event_loop.run(main2)
