@@ -1,4 +1,4 @@
-## Simple but workable event loop in Python (< 100 LOC)
+## Fully-functional Event Loop in 100 Lines of Python
 
 Check out the series about the event loop on my blog <a href="https://iximiuz.com/en/posts/explain-event-loop-in-100-lines-of-code/">Explain event loop in 100 lines of code</a> and <a href="https://iximiuz.com/en/posts/from-callback-hell-to-async-await-heaven/">From Callback Hell to async/await Heaven</a>.
 
