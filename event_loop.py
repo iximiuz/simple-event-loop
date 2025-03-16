@@ -275,7 +275,7 @@ def get_user_balance(serv_addr, user_id, done):
 
         client.get_user(user_id, on_user)
 
-    set_timer(random.randint(0, 10e6), on_timer)
+    set_timer(random.randint(0, int(10e6)), on_timer)
 
 
 def main1(serv_addr):
